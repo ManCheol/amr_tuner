@@ -16,6 +16,12 @@
  * [연결이 끊길 때]
  *   대기 중인 요청은 모두 DISCONNECTED로 처리 함수를 부른 뒤 지운다.
  *   (응답을 영원히 기다리며 버튼이 잠긴 채로 남는 일을 막음)
+ *
+ * [접속 제한 시간]
+ *   접속 시도가 connectTimeoutMs(기본 3000 ms) 안에 끝나지 않으면 스스로 포기한다.
+ *   Windows는 닫힌 포트에 접속할 때 거절(RST)을 받아도 SYN을 몇 번 더 보내 2초 이상 걸리고,
+ *   응답 없는 주소(전원 꺼진 PC, 잘못된 IP)는 약 21초 동안 "접속 중"에 머문다.
+ *   OS에 맡기지 않고 앱이 시간을 정해, 화면이 오래 "접속 중"으로 멈춰 보이지 않게 한다.
  * ---------------------------------------------------------------------------
  */
 #ifndef AMR_TUNER_CORE_GATEWAY_CLIENT_HPP
@@ -76,6 +82,8 @@ public:
   void setRequestTimeoutMs(int ms) {timeoutMs_ = ms;}
   /** 재접속 간격 [ms] (기본 2000) */
   void setReconnectIntervalMs(int ms);
+  /** 접속 시도 제한 시간 [ms] (기본 3000). 넘으면 접속 실패로 처리 (자동 재접속이면 다시 예약) */
+  void setConnectTimeoutMs(int ms);
 
   /** 대기 중인 요청 수 (시험·화면 표시용) */
   int pendingCount() const {return static_cast<int>(pending_.size());}
@@ -92,6 +100,7 @@ private slots:
   void onSocketError(QAbstractSocket::SocketError err);
   void onTimeoutTick();
   void onReconnectTimer();
+  void onConnectTimeout();
 
 private:
   struct Pending
@@ -102,6 +111,10 @@ private:
   };
 
   void setState(State s);
+  /** 소켓 접속 시작 + 제한 시간 감시 시작 (처음 접속·재접속 공통) */
+  void startConnect();
+  /** 접속 실패 공통 처리: 상태 정리, 자동 재접속 예약 */
+  void connectFailed();
   void handleLine(const QByteArray & line);
   /** 대기 중인 요청을 모두 실패로 끝낸다 */
   void failAll(const QString & code, const QString & message);
@@ -112,6 +125,7 @@ private:
   QElapsedTimer clock_;
   QTimer timeoutTimer_;       ///< 응답 마감 확인 (100 ms 주기)
   QTimer reconnectTimer_;     ///< 자동 재접속
+  QTimer connectTimer_;       ///< 접속 시도 제한 시간
 
   QString host_;
   quint16 port_{0U};

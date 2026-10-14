@@ -17,7 +17,7 @@ WSL2(또는 다른 PC)에서 실행 중인 중계 노드 [`amr_param_gateway`](.
 
 | 기능 | 설명 |
 |---|---|
-| 접속 / 끊기 | 주소·포트 입력 후 접속. 중계 노드가 재시작되면 **2초마다 자동 재접속** |
+| 접속 / 끊기 | 주소·포트 입력 후 접속. 중계 노드가 재시작되면 **2초마다 자동 재접속**, 접속 시도는 3초 안에 끝나지 않으면 포기 후 재시도 |
 | 파라미터 표 | 이름, 현재 값, 변경 값, 범위, 한글 설명. 읽기 전용(시작 시에만 읽는 값)은 회색 |
 | **두 단계 변경** | 값을 고치면 노란색 "변경 예정"으로만 표시 → **[적용]** 을 눌러야 한 번에 반영 |
 | 전부 적용 또는 전부 거부 | 여러 값을 한 요청으로 보냄. 하나라도 거부되면 아무것도 바뀌지 않음 (거부 사유 표시) |
@@ -53,8 +53,11 @@ WSL2(또는 다른 PC)에서 실행 중인 중계 노드 [`amr_param_gateway`](.
 
 ### Qt Creator (권장)
 
-1. **파일 > 파일 또는 프로젝트 열기** → `CMakeLists.txt`
-2. 키트: **Desktop Qt 6.12.0 MinGW 64-bit** → 구성
+1. **파일 > 파일 또는 프로젝트 열기 (Ctrl+O)** → 폴더가 아닌 **`CMakeLists.txt` 파일** 선택
+   - **Open Workspace**나 폴더 끌어다 놓기로 열면 CMake가 없는 "Workspace 프로젝트"가 되어 빌드할 수 없음
+     (`.qtcreator\project.json`이 생김 → 프로젝트를 닫고 `.qtcreator` 폴더를 지운 뒤 다시 열기)
+   - 다시 열 때도 최근 프로젝트에서 경로가 `...\CMakeLists.txt`로 끝나는 항목 선택
+2. 키트: **Desktop Qt 6.12.0 MinGW 64-bit** 체크 → Configure Project
 3. 빌드(Ctrl+B) → 실행(Ctrl+R)
 4. 단위 시험: **도구 > 테스트 > 모든 테스트 실행** (Qt Test 4종)
 
@@ -100,7 +103,7 @@ C:\Qt\6.12.0\mingw_64\bin\windeployqt.exe --release dist\amr_tuner.exe
 src/
   core/                       ← 화면과 무관 (단위 시험 대상)
     gateway_protocol.*        규약 v1: 요청 생성, 응답·알림 해석, 값 변환, 줄 나누기
-    gateway_client.*          QTcpSocket, 요청 번호·시간 초과·자동 재접속
+    gateway_client.*          QTcpSocket, 요청 번호·시간 초과·접속 제한 시간·자동 재접속
     param_model.*             표 모델: 현재 값 / 변경 예정 / 검사 / 원격 반영
     condition_file.*          시험 조건 파일 저장·불러오기
     kst_time.*, app_log.*     서울 시간 표기, 공통 로그 형식
@@ -113,7 +116,7 @@ tests/
   test_gateway_protocol.cpp   규약
   test_param_model.cpp        모델 검사 규칙
   test_condition_file.cpp     조건 파일·서울 시간·로그 형식
-  test_gateway_client.cpp     통신 (응답 대응, 시간 초과, 쪼개진 수신, 끊김·재접속, 접속 거부)
+  test_gateway_client.cpp     통신 (응답 대응, 시간 초과, 쪼개진 수신, 끊김·재접속, 접속 거부, 응답 없는 주소)
 ```
 
 **설계 원칙**

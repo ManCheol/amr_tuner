@@ -191,14 +191,44 @@ private slots:
     QCOMPARE(client_->state(), GatewayClient::State::Disconnected);
   }
 
+  /* 닫힌 포트: 거절(RST) 또는 접속 제한 시간 중 먼저 오는 쪽으로 실패 처리.
+   * Windows는 RST를 받아도 SYN을 다시 보내 2초 넘게 걸릴 수 있어(실측 3초 이상),
+   * 앱의 접속 제한 시간(여기서는 1초)이 없으면 kWaitMs 안에 끝나지 않았다. */
   void connectionRefused()
   {
     const quint16 port = server_->port();
     server_.reset();   // 대기 중인 서버 없음
+    client_->setConnectTimeoutMs(1000);
+    QElapsedTimer t;
+    t.start();
     client_->connectTo(QStringLiteral("127.0.0.1"), port, false);
     QVERIFY(QTest::qWaitFor([this]() {
         return GatewayClient::State::Disconnected == client_->state();
       }, kWaitMs));
+    QVERIFY2(t.elapsed() < 2000, qPrintable(QStringLiteral("took %1 ms").arg(t.elapsed())));
+    QTest::qWait(300);   // 자동 재접속을 끈 상태: 다시 시도하지 않음
+    QCOMPARE(client_->state(), GatewayClient::State::Disconnected);
+  }
+
+  /* 응답 없는 주소(RFC 5737 문서용 주소, 라우팅되지 않음): OS는 약 21초(Windows) 동안
+   * 접속 중에 머물 수 있다. 앱의 제한 시간으로 끊고, 자동 재접속이면 다시 시도해야 한다. */
+  void unreachableHostGivesUpAndRetries()
+  {
+    client_->setConnectTimeoutMs(300);
+    client_->setReconnectIntervalMs(200);
+    QElapsedTimer t;
+    t.start();
+    client_->connectTo(QStringLiteral("198.51.100.1"), 9310, true);
+    QVERIFY(QTest::qWaitFor([this]() {
+        return GatewayClient::State::Disconnected == client_->state();
+      }, kWaitMs));
+    QVERIFY2(t.elapsed() < 1500, qPrintable(QStringLiteral("took %1 ms").arg(t.elapsed())));
+    /* 재접속 예약 → 다시 Connecting으로 */
+    QVERIFY(QTest::qWaitFor([this]() {
+        return GatewayClient::State::Connecting == client_->state();
+      }, kWaitMs));
+    client_->disconnectFrom();
+    QCOMPARE(client_->state(), GatewayClient::State::Disconnected);
   }
 
   void serverFullEvent()

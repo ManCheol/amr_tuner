@@ -15,6 +15,7 @@ namespace
 {
 constexpr int kTimeoutTickMs = 100;
 constexpr int kDefaultReconnectMs = 2000;
+constexpr int kDefaultConnectTimeoutMs = 3000;
 const QString kTag = QStringLiteral("NET");
 }  // namespace
 
@@ -34,12 +35,17 @@ GatewayClient::GatewayClient(QObject * parent)
   reconnectTimer_.setSingleShot(true);
   reconnectTimer_.setInterval(kDefaultReconnectMs);
   connect(&reconnectTimer_, &QTimer::timeout, this, &GatewayClient::onReconnectTimer);
+
+  connectTimer_.setSingleShot(true);
+  connectTimer_.setInterval(kDefaultConnectTimeoutMs);
+  connect(&connectTimer_, &QTimer::timeout, this, &GatewayClient::onConnectTimeout);
 }
 
 GatewayClient::~GatewayClient()
 {
   /* 소멸 중에는 처리 함수를 부르지 않는다 (처리 함수가 이미 사라진 화면을 가리킬 수 있음) */
   reconnectTimer_.stop();
+  connectTimer_.stop();
   timeoutTimer_.stop();
   pending_.clear();
   socket_.disconnect(this);
@@ -49,6 +55,27 @@ GatewayClient::~GatewayClient()
 void GatewayClient::setReconnectIntervalMs(int ms)
 {
   reconnectTimer_.setInterval(ms);
+}
+
+void GatewayClient::setConnectTimeoutMs(int ms)
+{
+  connectTimer_.setInterval(ms);
+}
+
+void GatewayClient::startConnect()
+{
+  setState(State::Connecting);
+  connectTimer_.start();
+  socket_.connectToHost(host_, port_);
+}
+
+void GatewayClient::connectFailed()
+{
+  connectTimer_.stop();
+  setState(State::Disconnected);
+  if ((true == autoReconnect_) && (false == userDisconnect_)) {
+    reconnectTimer_.start();
+  }
 }
 
 void GatewayClient::connectTo(const QString & host, quint16 port, bool autoReconnect)
@@ -68,9 +95,8 @@ void GatewayClient::connectTo(const QString & host, quint16 port, bool autoRecon
   userDisconnect_ = false;
   errorLogged_ = false;
   lines_.clear();
-  setState(State::Connecting);
   AppLog::info(kTag, QStringLiteral("connecting to %1:%2").arg(host_).arg(port_));
-  socket_.connectToHost(host_, port_);
+  startConnect();
 }
 
 void GatewayClient::disconnectFrom()
@@ -78,6 +104,7 @@ void GatewayClient::disconnectFrom()
   userDisconnect_ = true;
   autoReconnect_ = false;
   reconnectTimer_.stop();
+  connectTimer_.stop();
   if (QAbstractSocket::UnconnectedState != socket_.state()) {
     AppLog::info(kTag, QStringLiteral("disconnect requested"));
     socket_.abort();
@@ -116,6 +143,7 @@ qint64 GatewayClient::send(const QString & cmd, const QJsonObject & body, ReplyH
 
 void GatewayClient::onConnected()
 {
+  connectTimer_.stop();
   AppLog::info(kTag, QStringLiteral("connected to %1:%2").arg(host_).arg(port_));
   errorLogged_ = false;
   setState(State::Connected);
@@ -124,6 +152,7 @@ void GatewayClient::onConnected()
 void GatewayClient::onDisconnected()
 {
   const bool wasConnected = (State::Connected == state_);
+  connectTimer_.stop();
   failAll(QStringLiteral("DISCONNECTED"), QStringLiteral("connection closed"));
   setState(State::Disconnected);
   if ((true == wasConnected) && (false == userDisconnect_)) {
@@ -149,19 +178,32 @@ void GatewayClient::onSocketError(QAbstractSocket::SocketError err)
   }
   if (State::Connecting == state_) {
     /* 접속 실패: disconnected 신호가 오지 않을 수 있으므로 여기서 상태를 정리한다 */
-    setState(State::Disconnected);
-    if ((true == autoReconnect_) && (false == userDisconnect_)) {
-      reconnectTimer_.start();
-    }
+    connectFailed();
   }
+}
+
+void GatewayClient::onConnectTimeout()
+{
+  if (State::Connecting != state_) {
+    return;   // 그사이 연결됐거나 실패 처리됨
+  }
+  if (false == errorLogged_) {
+    AppLog::warn(kTag, QStringLiteral("connect timeout after %1 ms (%2:%3)%4").arg(
+        QString::number(connectTimer_.interval()), host_, QString::number(port_),
+        (true == autoReconnect_) ? QStringLiteral(" (retrying)") : QString()));
+    errorLogged_ = true;
+  }
+  /* 상태를 먼저 정리한 뒤 소켓을 끊는다. 접속 중 abort()는 disconnected·errorOccurred를
+   * 보내지 않는 것이 보통이지만, 보내더라도 이미 Disconnected라 중복 처리되지 않는다. */
+  connectFailed();
+  socket_.abort();
 }
 
 void GatewayClient::onReconnectTimer()
 {
   if ((true == autoReconnect_) && (false == userDisconnect_) && (State::Disconnected == state_)) {
     lines_.clear();
-    setState(State::Connecting);
-    socket_.connectToHost(host_, port_);
+    startConnect();
   }
 }
 
