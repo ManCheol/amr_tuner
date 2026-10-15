@@ -282,6 +282,127 @@ bool sameValue(const QVariant & a, const QVariant & b, ParamType type)
 /* ===========================================================================
  * LineBuffer
  * =========================================================================== */
+/* ===========================================================================
+ * 그래프용 알림
+ * =========================================================================== */
+namespace
+{
+
+/** JSON 숫자 → double. null(중계 노드에서 NaN·무한대)이면 NaN, 숫자가 아니면 false */
+bool toNumber(const QJsonValue & v, double & out)
+{
+  bool ok = true;
+  if (true == v.isDouble()) {
+    out = v.toDouble();
+  } else if (true == v.isNull()) {
+    out = std::numeric_limits<double>::quiet_NaN();
+  } else {
+    ok = false;
+  }
+  return ok;
+}
+
+/**
+ * 선택 항목 배열 읽기. 항목이 없으면 present=false로 성공.
+ * 배열이 아니거나 길이가 N보다 짧거나 숫자가 아닌 값이 있으면 실패.
+ */
+template<qsizetype N>
+bool readArray(
+  const QJsonObject & body, const QString & key, std::array<double, N> & dst, bool & present,
+  QString & err)
+{
+  present = false;
+  const auto it = body.constFind(key);
+  if (body.constEnd() == it) {
+    return true;
+  }
+  if (false == it->isArray()) {
+    err = key + QStringLiteral(" is not an array");
+    return false;
+  }
+  const QJsonArray arr = it->toArray();
+  if (N > arr.size()) {
+    err = QStringLiteral("%1 has %2 values (%3 expected)").arg(key).arg(arr.size()).arg(N);
+    return false;
+  }
+  for (qsizetype i = 0; i < N; ++i) {
+    if (false == toNumber(arr.at(i), dst[static_cast<std::size_t>(i)])) {
+      err = QStringLiteral("%1[%2] is not a number").arg(key).arg(i);
+      return false;
+    }
+  }
+  present = true;
+  return true;
+}
+
+}  // namespace
+
+bool parseTelemetry(const QJsonObject & body, TelemetrySample & out, QString & err)
+{
+  out = TelemetrySample{};
+  const QJsonValue t = body.value(QStringLiteral("t"));
+  const QJsonValue st = body.value(QStringLiteral("state"));
+  if ((false == t.isDouble()) || (false == st.isDouble())) {
+    err = QStringLiteral("telemetry needs numeric t and state");
+    return false;
+  }
+  out.t = t.toDouble();
+  out.state = st.toInt(-1);
+
+  std::array<double, 2> cmd{};
+  bool ok = readArray<2>(body, QStringLiteral("cmd"), cmd, out.hasCmd, err);
+  if (true == ok) {
+    out.cmdV = cmd[0];
+    out.cmdW = cmd[1];
+    ok = readArray<kPidTermsSize>(body, QStringLiteral("lin"), out.lin, out.hasLin, err);
+  }
+  if (true == ok) {
+    ok = readArray<kPidTermsSize>(body, QStringLiteral("ang"), out.ang, out.hasAng, err);
+  }
+  if (true == ok) {
+    ok = readArray<kTrajectorySize>(body, QStringLiteral("traj"), out.traj, out.hasTraj, err);
+  }
+  if (true == ok) {
+    ok = readArray<kErrorCount>(body, QStringLiteral("err"), out.err, out.hasErr, err);
+  }
+  return ok;
+}
+
+bool parseGoal(const QJsonObject & body, GoalInfo & out, QString & err)
+{
+  out = GoalInfo{};
+  const QJsonValue t = body.value(QStringLiteral("t"));
+  const QJsonValue x = body.value(QStringLiteral("x"));
+  const QJsonValue y = body.value(QStringLiteral("y"));
+  if ((false == t.isDouble()) || (false == x.isDouble()) || (false == y.isDouble())) {
+    err = QStringLiteral("goal needs numeric t, x, y");
+    return false;
+  }
+  out.t = t.toDouble();
+  out.x = x.toDouble();
+  out.y = y.toDouble();
+  out.yaw = body.value(QStringLiteral("yaw")).toDouble(0.0);
+  out.frame = body.value(QStringLiteral("frame")).toString();
+  out.stamp = body.value(QStringLiteral("stamp")).toString();
+  return true;
+}
+
+QStringList supportedEvents(const QJsonObject & helloBody)
+{
+  QStringList out;
+  const QJsonValue ev = helloBody.value(QStringLiteral("events"));
+  if (true == ev.isArray()) {
+    for (const QJsonValue & v : ev.toArray()) {
+      if (true == v.isString()) {
+        out.append(v.toString());
+      }
+    }
+  } else {
+    out.append(QString::fromLatin1(kEvtParamChanged));   // 중계 노드 0.1.0
+  }
+  return out;
+}
+
 LineBuffer::LineBuffer(qsizetype maxLine)
 : maxLine_(maxLine)
 {

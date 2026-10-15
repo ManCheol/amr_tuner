@@ -9,6 +9,8 @@
  *   - 응답 : {"v":1,"id":N,"type":"res","ok":true, ...}
  *            {"v":1,"id":N,"type":"res","ok":false,"error":{"code":"REJECTED","message":"..."}}
  *   - 알림 : {"v":1,"type":"evt","evt":"param_changed","node":"...","params":{...},"stamp":"..."}
+ *            {"v":1,"type":"evt","evt":"telemetry","t":12.3,"state":2,"cmd":[..],"lin":[..],...}  (중계 0.2.0~)
+ *            {"v":1,"type":"evt","evt":"goal","t":12.2,"x":1,"y":0,"yaw":0,"frame":"map",...}    (중계 0.2.0~)
  *
  * [이 파일의 역할]
  *   통신(GatewayClient)과 화면(ParamModel)이 JSON 형식을 직접 다루지 않도록
@@ -20,10 +22,13 @@
 
 #include <QByteArray>
 #include <QJsonObject>
+#include <QStringList>
 #include <QJsonValue>
 #include <QList>
 #include <QString>
 #include <QVariant>
+
+#include <array>
 
 namespace amr::proto
 {
@@ -96,6 +101,69 @@ QString displayValue(const QVariant & v, ParamType type);
 
 /** 두 값이 같은지 (실수는 아주 작은 차이를 같게 봄) */
 bool sameValue(const QVariant & a, const QVariant & b, ParamType type);
+
+/* ===========================================================================
+ * 그래프용 알림 (중계 노드 0.2.0~)
+ * =========================================================================== */
+
+/** 알림 이름 */
+inline constexpr const char * kEvtParamChanged = "param_changed";
+inline constexpr const char * kEvtTelemetry = "telemetry";
+inline constexpr const char * kEvtGoal = "goal";
+
+/** PID 항 배열 [error, p, i, d, output, saturated] */
+inline constexpr qsizetype kPidTermsSize = 6;
+/** 궤적 배열 [s_ref, v_ref, a_ref, s_act, error, t, T, active] */
+inline constexpr qsizetype kTrajectorySize = 8;
+/** 오차 배열 [distance, heading, yaw] */
+inline constexpr qsizetype kErrorCount = 3;
+
+/**
+ * telemetry 알림 하나 = PID 노드의 한 제어 주기.
+ * 중계 노드가 아직 받지 못한 묶음은 has* = false. 값이 null이면 NaN.
+ */
+struct TelemetrySample
+{
+  double t{0.0};                 ///< 중계 노드 시계 [s] (차이만 의미 있음)
+  int state{0};                  ///< 0 IDLE, 1 ROTATE_TO_HEADING, 2 MOVE, 3 ROTATE_TO_YAW, 4 REACHED
+  bool hasCmd{false};
+  double cmdV{0.0};              ///< 명령 선속도 [m/s]
+  double cmdW{0.0};              ///< 명령 각속도 [rad/s]
+  bool hasLin{false};
+  std::array<double, kPidTermsSize> lin{};     ///< 거리 PID [error m, p, i, d, output m/s, saturated]
+  bool hasAng{false};
+  std::array<double, kPidTermsSize> ang{};     ///< 방향 PID [error rad, p, i, d, output rad/s, saturated]
+  bool hasTraj{false};
+  std::array<double, kTrajectorySize> traj{};  ///< 직선 궤적 [s_ref, v_ref, a_ref, s_act, error, t, T, active]
+  bool hasErr{false};
+  std::array<double, kErrorCount> err{};       ///< 목표 오차 [거리 m, heading rad, yaw rad]
+};
+
+/** goal 알림 (PID 노드가 받은 목표) */
+struct GoalInfo
+{
+  double t{0.0};
+  double x{0.0};
+  double y{0.0};
+  double yaw{0.0};
+  QString frame;
+  QString stamp;   ///< 서울 시각
+};
+
+/**
+ * telemetry 알림 본문 해석.
+ * t·state가 없거나 배열 길이가 짧으면 false와 이유 (그 줄은 버린다).
+ */
+bool parseTelemetry(const QJsonObject & body, TelemetrySample & out, QString & err);
+
+/** goal 알림 본문 해석. t·x·y가 없으면 false */
+bool parseGoal(const QJsonObject & body, GoalInfo & out, QString & err);
+
+/**
+ * hello 응답에서 중계 노드가 지원하는 알림 목록.
+ * 0.1.0은 events 항목이 없으므로 param_changed 하나로 본다.
+ */
+QStringList supportedEvents(const QJsonObject & helloBody);
 
 /* ===========================================================================
  * 줄 나누기: TCP로 받은 바이트를 '\n' 단위로 자른다.

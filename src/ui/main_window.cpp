@@ -24,6 +24,7 @@
 #include <QSpinBox>
 #include <QSplitter>
 #include <QStatusBar>
+#include <QTabWidget>
 #include <QTableView>
 #include <QVBoxLayout>
 
@@ -39,6 +40,7 @@ const QString kTagNet = QStringLiteral("NET");
 const QString kTagParam = QStringLiteral("PARAM");
 const QString kTagFile = QStringLiteral("FILE");
 const QString kTagUi = QStringLiteral("UI");
+const QString kTagPlot = QStringLiteral("PLOT");
 
 constexpr int kHighlightMs = 1500;     // 바뀐 값 파란색 표시 시간
 constexpr int kLogMaxLines = 3000;     // 로그 창 최대 줄 수 (오래된 줄부터 지움)
@@ -100,7 +102,7 @@ MainWindow::~MainWindow()
 void MainWindow::buildUi()
 {
   setWindowTitle(tr("AMR Tuner - PID 파라미터 조정"));
-  resize(1180, 760);
+  resize(1280, 860);
 
   auto * central = new QWidget(this);
   auto * root = new QVBoxLayout(central);
@@ -196,8 +198,14 @@ void MainWindow::buildUi()
   logView_->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
   logView_->setPlaceholderText(tr("로그"));
 
+  /* ---- 탭: 파라미터 표 / 그래프 ---- */
+  telemetryView_ = new TelemetryView(central);
+  tabs_ = new QTabWidget(central);
+  tabs_->addTab(table_, tr("파라미터"));
+  tabs_->addTab(telemetryView_, tr("그래프"));
+
   splitter_ = new QSplitter(Qt::Vertical, central);
-  splitter_->addWidget(table_);
+  splitter_->addWidget(tabs_);
   splitter_->addWidget(logView_);
   splitter_->setStretchFactor(0, 4);
   splitter_->setStretchFactor(1, 1);
@@ -236,6 +244,8 @@ void MainWindow::loadSettings()
   if (false == split.isEmpty()) {
     (void)splitter_->restoreState(split);
   }
+  tabs_->setCurrentIndex(s.value(QStringLiteral("ui/tab"), 0).toInt());
+  telemetryView_->loadSettings();
 }
 
 void MainWindow::saveSettings() const
@@ -245,6 +255,8 @@ void MainWindow::saveSettings() const
   s.setValue(QStringLiteral("net/port"), portSpin_->value());
   s.setValue(QStringLiteral("ui/geometry"), saveGeometry());
   s.setValue(QStringLiteral("ui/splitter"), splitter_->saveState());
+  s.setValue(QStringLiteral("ui/tab"), tabs_->currentIndex());
+  telemetryView_->saveSettings();
 }
 
 /* ===========================================================================
@@ -273,6 +285,7 @@ void MainWindow::onStateChanged(GatewayClient::State state)
     nodeReady_ = false;
     busy_ = false;   // 대기 중이던 요청은 DISCONNECTED로 이미 끝남
   }
+  telemetryView_->setConnected(GatewayClient::State::Connected == state);
   updateButtons();
   updateStatus();
 }
@@ -296,17 +309,43 @@ void MainWindow::requestHello()
       } else {
         AppLog::warn(kTagNet, QStringLiteral("target node is not running: start it, then press [새로 고침]"));
       }
-      requestSubscribe();
+      requestSubscribe(proto::supportedEvents(r.body));
     });
 }
 
-void MainWindow::requestSubscribe()
+void MainWindow::requestSubscribe(const QStringList & supported)
 {
+  /* 0.1.0 중계 노드는 telemetry·goal을 모르므로 함께 구독하면 요청 전체가 거부된다
+   * → hello가 알려 준 목록에 있는 것만 구독한다 */
+  QJsonArray events;
+  events.append(QString::fromLatin1(proto::kEvtParamChanged));
+  const bool graphs = supported.contains(QLatin1String(proto::kEvtTelemetry));
+  if (true == graphs) {
+    events.append(QString::fromLatin1(proto::kEvtTelemetry));
+  }
+  if (true == supported.contains(QLatin1String(proto::kEvtGoal))) {
+    events.append(QString::fromLatin1(proto::kEvtGoal));
+  }
+  if (true == graphs) {
+    telemetryView_->setUnavailable(QString());
+  } else {
+    const QString why = tr("중계 노드 %1는 그래프 알림을 지원하지 않음 (0.2.0 이상 필요)").arg(gatewayVersion_);
+    telemetryView_->setUnavailable(why);
+    AppLog::warn(kTagPlot, QStringLiteral("gateway %1 has no telemetry: update amr_param_gateway to 0.2.0+")
+      .arg(gatewayVersion_));
+  }
+
   QJsonObject body;
-  body.insert(QStringLiteral("events"), QJsonArray{QStringLiteral("param_changed")});
+  body.insert(QStringLiteral("events"), events);
   (void)client_.send(QStringLiteral("subscribe"), body, [](const Reply & r) {
       if (false == r.ok) {
         AppLog::warn(kTagNet, QStringLiteral("subscribe failed: %1").arg(describe(r)));
+      } else {
+        QStringList names;
+        for (const QJsonValue & v : r.body.value(QStringLiteral("subscribed")).toArray()) {
+          names.append(v.toString());
+        }
+        AppLog::info(kTagNet, QStringLiteral("subscribed: %1").arg(names.join(QStringLiteral(", "))));
       }
     });
 }
@@ -347,7 +386,12 @@ void MainWindow::refresh()
 
 void MainWindow::onEvent(const QString & evt, const QJsonObject & body)
 {
-  if (QLatin1String("param_changed") == evt) {
+  if (QLatin1String(proto::kEvtTelemetry) == evt) {
+    /* 초당 20줄: 로그를 남기지 않고 그래프로만 보낸다 (가장 잦은 알림이라 먼저 검사) */
+    telemetryView_->onTelemetry(body);
+  } else if (QLatin1String(proto::kEvtGoal) == evt) {
+    telemetryView_->onGoal(body);
+  } else if (QLatin1String(proto::kEvtParamChanged) == evt) {
     const QJsonObject params = body.value(QStringLiteral("params")).toObject();
     const QStringList changed = model_.applyRemote(params);
     if (false == changed.isEmpty()) {

@@ -1,12 +1,14 @@
 /**
  * @file    test_gateway_protocol.cpp
- * @brief   규약 단위 시험 — 요청 생성, 응답·알림 해석, 값 변환, 줄 나누기
+ * @brief   규약 단위 시험 — 요청 생성, 응답·알림 해석, 값 변환, 줄 나누기, 그래프 알림
  */
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QtTest>
 
 #include "core/gateway_protocol.hpp"
+
+#include <cmath>
 
 using namespace amr::proto;
 
@@ -186,6 +188,88 @@ private slots:
     QVERIFY(b.append("\n").isEmpty());
     b.clear();
     QVERIFY(false == b.overflow());
+  }
+
+  /* ---------------- 그래프 알림 (중계 0.2.0) ---------------- */
+  void parseTelemetryFull()
+  {
+    /* 중계 노드 시험(test_telemetry)과 같은 모양의 실제 한 줄 */
+    const Message m = parseMessage(
+      R"({"v":1,"type":"evt","evt":"telemetry","t":12.346,"state":2,"cmd":[0.12,-0.3],)"
+      R"("lin":[0.01,0.05,0,0,0.05,0],"ang":[0.1,0.15,0,0,0.15,1],)"
+      R"("traj":[0.5,0.2,0,0.498,0.002,2.5,6,1],"err":[1.5,0.02,-1]})");
+    QCOMPARE(m.kind, Message::Kind::Event);
+    QCOMPARE(m.event, QStringLiteral("telemetry"));
+    TelemetrySample s;
+    QString err;
+    QVERIFY2(parseTelemetry(m.body, s, err), qPrintable(err));
+    QCOMPARE(s.t, 12.346);
+    QCOMPARE(s.state, 2);
+    QVERIFY(s.hasCmd && s.hasLin && s.hasAng && s.hasTraj && s.hasErr);
+    QCOMPARE(s.cmdV, 0.12);
+    QCOMPARE(s.cmdW, -0.3);
+    QCOMPARE(s.lin[4], 0.05);
+    QCOMPARE(s.ang[5], 1.0);
+    QCOMPARE(s.traj[4], 0.002);
+    QCOMPARE(s.err[2], -1.0);
+  }
+
+  void parseTelemetryOptionalAndNull()
+  {
+    /* 목표 전: err 없음, 아직 받지 못한 묶음 없음, NaN은 null */
+    TelemetrySample s;
+    QString err;
+    QVERIFY(parseTelemetry(QJsonDocument::fromJson(
+      R"({"t":1,"state":0,"cmd":[null,0],"err":[null,0.5,null]})").object(), s, err));
+    QVERIFY(s.hasCmd);
+    QVERIFY(std::isnan(s.cmdV));
+    QVERIFY(false == s.hasLin);
+    QVERIFY(false == s.hasTraj);
+    QVERIFY(s.hasErr);
+    QVERIFY(std::isnan(s.err[0]));
+    QCOMPARE(s.err[1], 0.5);
+  }
+
+  void parseTelemetryRejectsBad_data()
+  {
+    QTest::addColumn<QByteArray>("json");
+    QTest::newRow("no t") << QByteArray(R"({"state":1})");
+    QTest::newRow("no state") << QByteArray(R"({"t":1})");
+    QTest::newRow("short lin") << QByteArray(R"({"t":1,"state":1,"lin":[1,2,3]})");
+    QTest::newRow("lin not array") << QByteArray(R"({"t":1,"state":1,"lin":5})");
+    QTest::newRow("string value") << QByteArray(R"({"t":1,"state":1,"cmd":["a",0]})");
+  }
+
+  void parseTelemetryRejectsBad()
+  {
+    QFETCH(QByteArray, json);
+    TelemetrySample s;
+    QString err;
+    QVERIFY(false == parseTelemetry(QJsonDocument::fromJson(json).object(), s, err));
+    QVERIFY(false == err.isEmpty());
+  }
+
+  void parseGoalEvent()
+  {
+    GoalInfo g;
+    QString err;
+    QVERIFY(parseGoal(QJsonDocument::fromJson(
+      R"({"t":5,"x":1,"y":-0.5,"yaw":3.141593,"frame":"map","stamp":"2026-10-14T21:00:00+09:00"})")
+      .object(), g, err));
+    QCOMPARE(g.t, 5.0);
+    QCOMPARE(g.y, -0.5);
+    QCOMPARE(g.frame, QStringLiteral("map"));
+    QVERIFY(false == parseGoal(QJsonDocument::fromJson(R"({"x":1})").object(), g, err));
+  }
+
+  void supportedEventsFromHello()
+  {
+    /* 0.2.0: 목록 그대로, 0.1.0: events 없음 → param_changed만 */
+    QCOMPARE(supportedEvents(QJsonDocument::fromJson(
+      R"({"version":"0.2.0","events":["param_changed","telemetry","goal"]})").object()),
+      QStringList({QStringLiteral("param_changed"), QStringLiteral("telemetry"), QStringLiteral("goal")}));
+    QCOMPARE(supportedEvents(QJsonDocument::fromJson(R"({"version":"0.1.0"})").object()),
+      QStringList({QStringLiteral("param_changed")}));
   }
 };
 

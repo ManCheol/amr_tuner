@@ -6,14 +6,15 @@
  * │ 주소 [127.0.0.1] 포트 [9310] [접속]   ● 연결됨 · /pid_goal_controller  │
  * │ 검색 [        ] □ ROS 내부 숨김 □ 변경 예정만 [새로 고침]               │
  * │                     변경 예정 2개 [적용] [되돌리기] [조건 저장] [불러오기] │
- * ├───────────────────────────────────────────────────────────────────────┤
- * │ 이름 | 현재 값 | 변경 값 | 범위 | 설명                                  │
+ * ├─[파라미터]─[그래프]────────────────────────────────────────────────────┤
+ * │ 이름 | 현재 값 | 변경 값 | 범위 | 설명        (그래프 탭: TelemetryView) │
  * │  ...                                                                  │
  * ├───────────────────────────────────────────────────────────────────────┤
  * │ 로그                                                                  │
  * └───────────────────────────────────────────────────────────────────────┘
  *
- * [접속 순서]  접속 → hello(노드 확인) → list(목록) → subscribe(변경 알림)
+ * [접속 순서]  접속 → hello(노드 확인, 지원 알림) → list(목록)
+ *              → subscribe(param_changed + 지원하면 telemetry·goal)
  * [적용]       변경 예정 값을 set 하나로 보냄 (전부 적용 또는 전부 거부)
  */
 #ifndef AMR_TUNER_UI_MAIN_WINDOW_HPP
@@ -26,6 +27,7 @@
 #include "core/gateway_client.hpp"
 #include "core/param_model.hpp"
 #include "ui/param_filter_proxy.hpp"
+#include "ui/telemetry_view.hpp"
 
 class QCheckBox;
 class QLabel;
@@ -34,6 +36,7 @@ class QPlainTextEdit;
 class QPushButton;
 class QSpinBox;
 class QSplitter;
+class QTabWidget;
 class QTableView;
 
 namespace amr
@@ -72,7 +75,8 @@ private:
   void loadSettings();
   void saveSettings() const;
   void requestHello();
-  void requestSubscribe();
+  /** 중계 노드가 지원하는 알림 중 앱이 쓰는 것만 구독 */
+  void requestSubscribe(const QStringList & supported);
   void updateButtons();
   void updateStatus();
   void updateCountLabel();
@@ -103,7 +107,9 @@ private:
   QPushButton * revertBtn_{nullptr};
   QPushButton * saveBtn_{nullptr};
   QPushButton * loadBtn_{nullptr};
+  QTabWidget * tabs_{nullptr};
   QTableView * table_{nullptr};
+  TelemetryView * telemetryView_{nullptr};
   QPlainTextEdit * logView_{nullptr};
   QSplitter * splitter_{nullptr};
   QLabel * nodeLabel_{nullptr};
