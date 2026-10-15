@@ -100,6 +100,12 @@ QString TelemetryBuffer::stateName(int state)
     case 4:
       n = QStringLiteral("도착");
       break;
+    case 5:
+      n = QStringLiteral("막힘 대기");   // 장애물 때문에 정지해 기다림 (BLOCKED)
+      break;
+    case 6:
+      n = QStringLiteral("막혀 포기");   // 제한 시간 안에 치워지지 않아 목표 포기 (ABORTED)
+      break;
     default:
       n = QStringLiteral("?");
       break;

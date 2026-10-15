@@ -228,6 +228,8 @@ private slots:
   {
     QCOMPARE(TelemetryBuffer::stateName(2), QStringLiteral("직진"));
     QCOMPARE(TelemetryBuffer::stateName(4), QStringLiteral("도착"));
+    QCOMPARE(TelemetryBuffer::stateName(5), QStringLiteral("막힘 대기"));   // 장애물 정지 (BLOCKED)
+    QCOMPARE(TelemetryBuffer::stateName(6), QStringLiteral("막혀 포기"));   // 목표 포기 (ABORTED)
     QCOMPARE(TelemetryBuffer::stateName(9), QStringLiteral("?"));
   }
 };

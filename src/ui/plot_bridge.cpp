@@ -127,6 +127,12 @@ QVariantList PlotBridge::panels() const
   return out;
 }
 
+namespace
+{
+/** 상태 번호의 마지막 값 (pid/state: 0 정지 ~ 4 도착, 5 막힘 대기, 6 막혀 포기). 범례에 모두 표시 */
+constexpr int kLastState = 6;
+}  // namespace
+
 QColor PlotBridge::stateColor(int state)
 {
   QColor c(QStringLiteral("#afb8c1"));   // 0 정지, 그 밖
@@ -143,6 +149,12 @@ QColor PlotBridge::stateColor(int state)
     case 4:
       c = QColor(QStringLiteral("#4ac26b"));   // 도착
       break;
+    case 5:
+      c = QColor(QStringLiteral("#ff8182"));   // 막힘 대기
+      break;
+    case 6:
+      c = QColor(QStringLiteral("#cf222e"));   // 막혀 포기
+      break;
     default:
       break;
   }
@@ -152,7 +164,7 @@ QColor PlotBridge::stateColor(int state)
 QVariantList PlotBridge::stateLegend() const
 {
   QVariantList out;
-  for (int st = 0; st <= 4; ++st) {
+  for (int st = 0; st <= kLastState; ++st) {
     out.append(QVariantMap{
       {QStringLiteral("state"), st},
       {QStringLiteral("name"), TelemetryBuffer::stateName(st)},
