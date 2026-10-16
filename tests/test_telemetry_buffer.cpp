@@ -89,6 +89,29 @@ private slots:
     QCOMPARE(b.latest(Channel::LinOut), 0.015);   // PID 항은 그대로
   }
 
+  /* 3-1. 경로 추종 값: active일 때만, 단위 변환 (가로 mm, 방향 °) */
+  void pathValuesOnlyWhileActive()
+  {
+    TelemetryBuffer b;
+    TelemetrySample s = sample(0.0);
+    s.hasPath = true;
+    s.path = {0.0125, 0.01, 3.8, 0.18, 0.5, 1.9, 0.0};   // 직선 목표 등: active 0
+    (void)b.append(s);
+    QVERIFY(std::isnan(b.latest(Channel::PathLatMm)));
+    QVERIFY(std::isnan(b.latest(Channel::PathVLimit)));
+    s.t = 0.05;
+    s.path[6] = 1.0;                                     // 경로 추종 중
+    (void)b.append(s);
+    QVERIFY(std::fabs(b.latest(Channel::PathLatMm) - 12.5) < 1e-9);
+    QVERIFY(std::fabs(b.latest(Channel::PathHeadingDeg) - 0.5729578) < 1e-6);
+    QCOMPARE(b.latest(Channel::PathKappa), 3.8);
+    QCOMPARE(b.latest(Channel::PathVLimit), 0.18);
+    s.t = 0.1;
+    s.hasPath = false;                                   // 0.2.0 중계 노드: 항목 없음
+    (void)b.append(s);
+    QVERIFY(std::isnan(b.latest(Channel::PathLatMm)));
+  }
+
   /* 4. 목표 알림 = 새 이동: 지우고 목표 시각이 0초, 그보다 앞선 주기는 버림 */
   void startRunOnGoal()
   {

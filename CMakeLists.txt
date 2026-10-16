@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(amr_tuner VERSION 0.2.0 LANGUAGES CXX)
+project(amr_tuner VERSION 0.3.0 LANGUAGES CXX)
 
 # ---------------------------------------------------------------------------
 # C++20, Qt 6 (개발: Qt 6.12.0 MinGW 13.1 64-bit, Windows 11)

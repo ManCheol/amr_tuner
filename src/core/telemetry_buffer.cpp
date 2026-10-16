@@ -46,6 +46,10 @@ constexpr std::array<KeyEntry, kChannelCount> kKeys{{
   {Channel::GoalDist, "goal.dist"},
   {Channel::GoalHeadingDeg, "goal.heading_deg"},
   {Channel::GoalYawDeg, "goal.yaw_deg"},
+  {Channel::PathLatMm, "path.lat_mm"},
+  {Channel::PathHeadingDeg, "path.heading_deg"},
+  {Channel::PathKappa, "path.kappa"},
+  {Channel::PathVLimit, "path.v_limit"},
   {Channel::State, "state"},
 }};
 
@@ -198,6 +202,16 @@ TelemetryBuffer::Row TelemetryBuffer::toRow(const proto::TelemetrySample & s, do
     r.v[idx(Channel::GoalDist)] = s.err[0];
     r.v[idx(Channel::GoalHeadingDeg)] = s.err[1] * kRadToDeg;   // NaN은 NaN 그대로
     r.v[idx(Channel::GoalYawDeg)] = s.err[2] * kRadToDeg;
+  }
+  if (true == s.hasPath) {
+    /* 경로를 따라가는 중일 때만 (PID 노드는 직선 목표·정지 중에도 active 0으로 발행한다) */
+    const bool active = (0.5 <= s.path[6]);
+    if (true == active) {
+      r.v[idx(Channel::PathLatMm)] = s.path[0] * 1000.0;
+      r.v[idx(Channel::PathHeadingDeg)] = s.path[1] * kRadToDeg;
+      r.v[idx(Channel::PathKappa)] = s.path[2];
+      r.v[idx(Channel::PathVLimit)] = s.path[3];
+    }
   }
   r.v[idx(Channel::State)] = static_cast<double>(s.state);
   return r;

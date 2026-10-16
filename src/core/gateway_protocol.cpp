@@ -365,6 +365,9 @@ bool parseTelemetry(const QJsonObject & body, TelemetrySample & out, QString & e
   if (true == ok) {
     ok = readArray<kErrorCount>(body, QStringLiteral("err"), out.err, out.hasErr, err);
   }
+  if (true == ok) {
+    ok = readArray<kPathTrackingSize>(body, QStringLiteral("path"), out.path, out.hasPath, err);
+  }
   return ok;
 }
 

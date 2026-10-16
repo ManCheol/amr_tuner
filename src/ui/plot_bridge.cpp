@@ -52,16 +52,19 @@ struct PanelDef
 
 /**
  * 그래프 배치: QML GridLayout(2열)이 이 순서로 왼쪽→오른쪽, 위→아래로 놓는다.
- *   선속도         | 거리 PID 항
- *   궤적 추종 오차  | 방향 PID 항
- *   목표 거리 오차  | 방향 오차
+ *   선속도(+ 곡률 상한) | 거리 PID 항
+ *   궤적 추종 오차      | 방향 PID 항
+ *   경로 가로 오차      | 경로 곡률
+ *   목표 거리 오차      | 방향 오차
+ * 경로 두 그래프는 경로 추종 중에만 선이 있다 (중계 노드 0.3.0~, 직선 목표면 비어 있음).
  * 색은 어두운 배경이 아닌 흰 바탕 기준, 같은 그래프 안에서 구별되도록 고름.
  */
 const QList<PanelDef> & panelDefs()
 {
   static const QList<PanelDef> kDefs{
     {"speed", "선속도", "m/s", 3, 0.05, true, "",
-      {{"traj.v_ref", "기준", "#8c959f", 2.0}, {"cmd.v", "명령", "#0969da", 1.5}}},
+      {{"traj.v_ref", "기준", "#8c959f", 2.0}, {"cmd.v", "명령", "#0969da", 1.5},
+        {"path.v_limit", "곡률 상한", "#bc4c00", 1.0}}},
     {"pidlin", "거리 PID 항", "m/s", 3, 0.02, true, "lin.sat",
       {{"lin.p", "P", "#0969da", 1.5}, {"lin.i", "I", "#bf8700", 1.5},
         {"lin.d", "D", "#8250df", 1.5}, {"lin.out", "출력", "#24292f", 1.5}}},
@@ -70,6 +73,10 @@ const QList<PanelDef> & panelDefs()
     {"pidang", "방향 PID 항", "rad/s", 3, 0.05, true, "ang.sat",
       {{"ang.p", "P", "#0969da", 1.5}, {"ang.i", "I", "#bf8700", 1.5},
         {"ang.d", "D", "#8250df", 1.5}, {"ang.out", "출력", "#24292f", 1.5}}},
+    {"lateral", "경로 가로 오차", "mm", 1, 5.0, true, "",
+      {{"path.lat_mm", "가로 오차", "#cf222e", 1.5}}},
+    {"kappa", "경로 곡률", "1/m", 2, 0.5, true, "",
+      {{"path.kappa", "κ", "#8250df", 1.5}}},
     {"dist", "목표 거리 오차", "m", 3, 0.05, true, "",
       {{"goal.dist", "거리", "#1a7f37", 1.5}}},
     {"heading", "방향 오차", "°", 2, 2.0, true, "",

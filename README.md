@@ -5,7 +5,7 @@ WSL2(또는 다른 PC)에서 실행 중인 중계 노드 [`amr_param_gateway`](.
 
 - 개발 환경: Windows 11, Qt 6.12.0 (MinGW 13.1 64-bit), C++20, CMake + Ninja, Qt Graphs (QML)
 - 상대 시스템: WSL2 Ubuntu 24.04.5 LTS, ROS 2 Jazzy, `pid_goal_controller`
-- 작성일: 2026-10-14, 0.2.0(그래프): 2026-10-14 (서울 시간, UTC+09:00)
+- 작성일: 2026-10-14, 0.2.0(그래프): 2026-10-14, 0.3.0(경로 추종 그래프): 2026-10-16 (서울 시간, UTC+09:00)
 
 ```
 [Windows]  AMR Tuner ──TCP 9310 (한 줄 JSON)──▶ [WSL2] amr_param_gateway ──ROS 파라미터 서비스──▶ pid_goal_controller
@@ -33,12 +33,14 @@ WSL2(또는 다른 PC)에서 실행 중인 중계 노드 [`amr_param_gateway`](.
 
 ### 2단계: 그래프 탭 (0.2.0)
 
-| 그래프 (2열 × 3행) | 선 | 보는 것 |
+| 그래프 (2열 × 4행) | 선 | 보는 것 |
 |---|---|---|
-| 선속도 [m/s] | 기준 v_ref, 명령 | 궤적 계획대로 가감속하는지, 명령이 튀는지 |
+| 선속도 [m/s] | 기준 v_ref, 명령, 곡률 상한(경로 추종 중) | 궤적 계획대로 가감속하는지, 명령이 튀는지, 굽은 곳에서 명령이 곡률 상한 안인지 |
 | 거리 PID 항 [m/s] | P, I, D, 출력 | 항별 기여, 포화 (범례에 "포화" 표시) |
 | 궤적 추종 오차 [mm] | 추종 오차 (+ = 계획보다 뒤처짐) | 이득(kp)·앞먹임 효과, 위치 보정 충격 |
 | 방향 PID 항 [rad/s] | P, I, D, 출력 | 회전 중 진동·포화 |
+| 경로 가로 오차 [mm] (0.3.0) | 가로 오차 (+ = 경로 왼쪽) | 경로 추종 정확도, 출발 직후 오차, SLAM 위치 보정 순간의 점프 |
+| 경로 곡률 [1/m] (0.3.0) | κ (+ = 왼쪽으로 휨) | 굽은 곳 위치(곡률 상한이 걸리는 구간), planner 계단 모서리 |
 | 목표 거리 오차 [m] | 거리 | 수렴, 정지 오차 |
 | 방향 오차 [°] | 목표 방향, 최종 자세 | 회전 수렴, 최종 자세 오차 |
 
@@ -147,7 +149,7 @@ src/
     telemetry_view.*          그래프 탭: 도구줄 + QQuickWidget, 일시정지 대기열
     plot_bridge.*             QML ↔ 데이터: 그래프 정의, 보이는 구간, 축 범위, 선 점 넣기(replace)
 qml/                          ← Qt Graphs 화면 (qt_add_qml_module AmrTuner, 빌드 때 컴파일)
-  TelemetryView.qml           상태 범례 + 그래프 6개 배치
+  TelemetryView.qml           상태 범례 + 그래프 8개 배치
   ChartPanel.qml              그래프 하나: 제목·범례 값, GraphsView, 상태 띠·커서·마우스 조작
 tests/
   fake_gateway_server.*       가짜 중계 서버 (실제 TCP, 규약 흉내)
@@ -176,6 +178,7 @@ tests/
 | 적용 거부: REJECTED | 범위 밖 또는 값 사이 관계 위반 (예: stop_distance ≥ slow_distance). 아무 값도 바뀌지 않음 |
 | 접속 거부 (server_full) | 중계 노드 동시 접속 한도(기본 4) 초과 → 다른 창이나 `gw_cli.py watch` 종료 |
 | 그래프 탭: "그래프 알림을 지원하지 않음" | 중계 노드 0.1.0 → amr_param_gateway 0.2.0으로 다시 빌드 |
+| 경로 가로 오차·곡률 그래프가 비어 있음 | 직선 목표(`path.enabled` false)이거나 중계 노드 0.2.0 → amr_param_gateway 0.3.0으로 다시 빌드 |
 | 그래프 탭: "데이터 기다리는 중" | PID 노드가 꺼져 있거나 목표 전. WSL에서 `ros2 run amr_param_gateway gw_cli.py telemetry`로 중계 확인 |
 | 그래프 탭: 빨간 QML 오류 | Qt Graphs 미설치 또는 배포 때 `--qmldir` 누락 |
 | 그래프 시간이 궤적 시간과 어긋남 | 중계 노드를 `use_sim_time:=true`로 실행 (Gazebo가 실시간보다 느릴 때) |

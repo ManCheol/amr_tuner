@@ -1,7 +1,7 @@
 // TelemetryView.qml - 그래프 탭의 QML 화면 (Qt Graphs)
 //
 // 위 : 상태 색 범례, 조작 안내
-// 아래: 그래프 6개 (2열 × 3행). 무엇을 그릴지는 C++ PlotBridge.panels가 정한다.
+// 아래: 그래프 8개 (2열 × 4행). 무엇을 그릴지는 C++ PlotBridge.panels가 정한다.
 //
 // bridge(PlotBridge)는 C++ TelemetryView가 setInitialProperties로 넘겨준다.
 pragma ComponentBehavior: Bound
@@ -63,7 +63,7 @@ Rectangle {
             }
         }
 
-        // ---- 그래프 6개 ----
+        // ---- 그래프 8개 ----
         GridLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true

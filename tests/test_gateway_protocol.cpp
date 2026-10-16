@@ -212,6 +212,22 @@ private slots:
     QCOMPARE(s.ang[5], 1.0);
     QCOMPARE(s.traj[4], 0.002);
     QCOMPARE(s.err[2], -1.0);
+    QVERIFY(false == s.hasPath);   // 0.2.0 중계 노드: path 없음
+
+    /* 0.3.0: 경로 추종 값 */
+    const Message m3 = parseMessage(
+      R"({"v":1,"type":"evt","evt":"telemetry","t":1.0,"state":2,)"
+      R"("path":[0.0123,-0.05,3.8,0.2,0.75,1.88,1]})");
+    TelemetrySample s3;
+    QVERIFY2(parseTelemetry(m3.body, s3, err), qPrintable(err));
+    QVERIFY(s3.hasPath);
+    QCOMPARE(s3.path[0], 0.0123);
+    QCOMPARE(s3.path[3], 0.2);
+    QCOMPARE(s3.path[6], 1.0);
+    /* 짧은 배열은 그 줄 전체를 버림 (다른 배열과 같은 규칙) */
+    const Message bad = parseMessage(
+      R"({"v":1,"type":"evt","evt":"telemetry","t":1.0,"state":2,"path":[0.01,0,1,0.2,0.5,1]})");
+    QVERIFY(false == parseTelemetry(bad.body, s3, err));
   }
 
   void parseTelemetryOptionalAndNull()

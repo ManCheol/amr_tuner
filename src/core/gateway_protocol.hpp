@@ -117,6 +117,8 @@ inline constexpr qsizetype kPidTermsSize = 6;
 inline constexpr qsizetype kTrajectorySize = 8;
 /** 오차 배열 [distance, heading, yaw] */
 inline constexpr qsizetype kErrorCount = 3;
+/** 경로 추종 배열 [lateral, heading, kappa, v_limit, s, length, active] (중계 노드 0.3.0~) */
+inline constexpr qsizetype kPathTrackingSize = 7;
 
 /**
  * telemetry 알림 하나 = PID 노드의 한 제어 주기.
@@ -125,7 +127,7 @@ inline constexpr qsizetype kErrorCount = 3;
 struct TelemetrySample
 {
   double t{0.0};                 ///< 중계 노드 시계 [s] (차이만 의미 있음)
-  int state{0};                  ///< 0 IDLE, 1 ROTATE_TO_HEADING, 2 MOVE, 3 ROTATE_TO_YAW, 4 REACHED
+  int state{0};                  ///< 0 IDLE, 1 ROTATE_TO_HEADING, 2 MOVE, 3 ROTATE_TO_YAW, 4 REACHED, 5 BLOCKED, 6 ABORTED
   bool hasCmd{false};
   double cmdV{0.0};              ///< 명령 선속도 [m/s]
   double cmdW{0.0};              ///< 명령 각속도 [rad/s]
@@ -137,6 +139,8 @@ struct TelemetrySample
   std::array<double, kTrajectorySize> traj{};  ///< 직선 궤적 [s_ref, v_ref, a_ref, s_act, error, t, T, active]
   bool hasErr{false};
   std::array<double, kErrorCount> err{};       ///< 목표 오차 [거리 m, heading rad, yaw rad]
+  bool hasPath{false};                         ///< 0.2.0 중계 노드는 보내지 않음 → false
+  std::array<double, kPathTrackingSize> path{};  ///< 경로 추종 [가로 m(+ = 왼쪽), 방향 rad, κ 1/m, 속도 상한 m/s, s m, 길이 m, active]
 };
 
 /** goal 알림 (PID 노드가 받은 목표) */
