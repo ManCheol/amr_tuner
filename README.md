@@ -5,7 +5,7 @@ WSL2(또는 다른 PC)에서 실행 중인 중계 노드 [`amr_param_gateway`](.
 
 - 개발 환경: Windows 11, Qt 6.12.0 (MinGW 13.1 64-bit), C++20, CMake + Ninja, Qt Graphs (QML)
 - 상대 시스템: WSL2 Ubuntu 24.04.5 LTS, ROS 2 Jazzy, `pid_goal_controller`
-- 작성일: 2026-10-14, 0.2.0(그래프): 2026-10-14, 0.3.0(경로 추종 그래프): 2026-10-16 (서울 시간, UTC+09:00)
+- 작성일: 2026-10-14, 0.2.0(그래프): 2026-10-14, 0.3.0(경로 추종 그래프): 2026-10-16, 0.4.0(화면 저장): 2026-10-16 (서울 시간, UTC+09:00)
 
 ```
 [Windows]  AMR Tuner ──TCP 9310 (한 줄 JSON)──▶ [WSL2] amr_param_gateway ──ROS 파라미터 서비스──▶ pid_goal_controller
@@ -52,6 +52,8 @@ WSL2(또는 다른 PC)에서 실행 중인 중계 노드 [`amr_param_gateway`](.
 | 보기 | 최근 10·20·30·60초 또는 이동 전체 |
 | 일시정지 (Space, 그래프 클릭) | 커서 값 표시, 휠 = 확대/축소, 끌기 = 이동, 두 번 클릭 = 이동 전체. 멈춘 동안 받은 데이터는 대기열에 두었다가 [실시간으로]를 누르면 반영 |
 | 지우기 | 그래프를 비우고 다음 데이터부터 0초 |
+| 화면 저장 (0.4.0) | 그래프 탭 전체(도구줄·상태 글·그래프 8개)를 PNG로 저장하고, 같은 이름의 JSON에 그 순간의 **적용된 파라미터·목표·이동 번호·보이는 구간·커서 시각**을 남김. 폴더는 조건 파일과 같은 곳, 이름은 서울 시간 `graph_YYYYMMDD_HHMMSS` (같은 초면 `_2`…). JSON은 [조건 불러오기]로 그대로 불러올 수 있음 |
+| 메모 입력 (0.4.0) | 켜면 [화면 저장] 때 메모 창이 뜸 (JSON의 `note`, 취소하면 저장 안 함). 화면은 버튼을 누른 순간 먼저 찍으므로 메모를 쓰는 동안 그래프가 움직여도 그대로 |
 
 다음 단계 예정: 목표 지정·정지 등 제어 명령 (중계 노드 기능 추가 필요).
 
@@ -131,6 +133,21 @@ C:\Qt\6.12.0\mingw_64\bin\windeployqt.exe --release --qmldir qml dist\amr_tuner.
 - 저장 대상: 바꿀 수 있는 값만 (읽기 전용, `qos_overrides.*`, `use_sim_time` 제외)
 - 불러올 때: 없는 이름·범위 밖·읽기 전용 값은 건너뛰고 사유를 표시
 
+
+### 화면 저장 기록 (`graph_*.json`, 0.4.0)
+
+조건 파일 형식에 `capture` 항목을 더한 것입니다. [조건 불러오기]는 `capture`를 무시하고 파라미터만 불러옵니다.
+
+```json
+"capture": {
+  "image": "graph_20261016_093005.png", "run": 3, "elapsed_s": 11.85, "view_s": [0.0, 11.85],
+  "paused": true, "cursor_s": 3.422,
+  "goal": {"x": 3.41, "y": 0.862, "yaw": -1.225, "frame": "map", "stamp": "2026-10-16T09:29:50+09:00"},
+  "pending_changes": 0, "gateway": "0.3.0" }
+```
+- `params`는 노드에 **적용된** 값입니다. 적용하지 않은 변경 예정은 `pending_changes` 개수로만 남깁니다.
+- 값이 없으면 `null` (데이터 전 `elapsed_s`, 커서 없음 `cursor_s`, 목표 전 `goal`).
+
 ## 5. 구조
 
 ```
@@ -140,6 +157,7 @@ src/
     gateway_client.*          QTcpSocket, 요청 번호·시간 초과·접속 제한 시간·자동 재접속
     param_model.*             표 모델: 현재 값 / 변경 예정 / 검사 / 원격 반영
     condition_file.*          시험 조건 파일 저장·불러오기
+    capture_record.*          화면 저장 기록: 파일 이름(서울 시간·겹침 피하기), 조건 + capture JSON
     telemetry_buffer.*        그래프 데이터: 이동 시작 0초, 채널 값, 점 줄이기, 커서 값, 상태 구간
     kst_time.*, app_log.*     서울 시간 표기, 공통 로그 형식
   ui/
@@ -158,6 +176,7 @@ tests/
   test_condition_file.cpp     조건 파일·서울 시간·로그 형식
   test_gateway_client.cpp     통신 (응답 대응, 시간 초과, 쪼개진 수신, 끊김·재접속, 접속 거부, 응답 없는 주소)
   test_telemetry_buffer.cpp   그래프 데이터 (이동 시작, 시각 역행, 보관 한도, 커서 값, 점 줄이기, 상태 구간)
+  test_capture_record.cpp     화면 저장 기록 (파일 이름, 같은 이름 피하기, JSON이 조건 파일로 읽히는지, 빈 값 null)
 ```
 
 **설계 원칙**

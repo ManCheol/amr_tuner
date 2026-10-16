@@ -67,6 +67,8 @@ private slots:
   void revert();
   void saveCondition();
   void loadCondition();
+  /** 그래프 탭 [화면 저장]: PNG + 같은 이름 JSON (조건 + 화면 정보) */
+  void captureGraph();
   void onPendingCountChanged(int count);
   void onLog(const QString & line, amr::AppLog::Level level);
 

@@ -19,7 +19,7 @@ namespace
 constexpr qint64 kMaxFileBytes = 1024 * 1024;   // 조건 파일은 수 KB: 1 MB 넘으면 잘못된 파일
 }  // namespace
 
-QByteArray ConditionFile::toJson(const Condition & c)
+QJsonObject ConditionFile::toObject(const Condition & c)
 {
   QJsonObject o;
   o.insert(QStringLiteral("format"), QString::fromLatin1(kFormat));
@@ -27,8 +27,13 @@ QByteArray ConditionFile::toJson(const Condition & c)
   o.insert(QStringLiteral("saved_at"), c.savedAt.isEmpty() ? kst::nowIso() : c.savedAt);
   o.insert(QStringLiteral("note"), c.note);
   o.insert(QStringLiteral("params"), c.params);
+  return o;
+}
+
+QByteArray ConditionFile::toJson(const Condition & c)
+{
   /* 사람이 읽고 git diff로 비교하기 쉽도록 들여쓰기 형식으로 저장 (이름순 정렬은 QJsonObject가 보장) */
-  return QJsonDocument(o).toJson(QJsonDocument::Indented);
+  return QJsonDocument(toObject(c)).toJson(QJsonDocument::Indented);
 }
 
 bool ConditionFile::fromJson(const QByteArray & data, Condition & out, QString & err)
@@ -63,12 +68,16 @@ bool ConditionFile::fromJson(const QByteArray & data, Condition & out, QString &
 
 bool ConditionFile::save(const QString & path, const Condition & c, QString & err)
 {
+  return saveBytes(path, toJson(c), err);
+}
+
+bool ConditionFile::saveBytes(const QString & path, const QByteArray & data, QString & err)
+{
   QSaveFile f(path);
   if (false == f.open(QIODevice::WriteOnly)) {
     err = f.errorString();
     return false;
   }
-  const QByteArray data = toJson(c);
   if (data.size() != f.write(data)) {
     err = f.errorString();
     f.cancelWriting();

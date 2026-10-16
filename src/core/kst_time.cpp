@@ -33,9 +33,14 @@ QString nowForLog()
   return shifted(QDateTime::currentDateTimeUtc()).toString(QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz"));
 }
 
+QString toFileName(const QDateTime & utc)
+{
+  return shifted(utc).toString(QStringLiteral("yyyyMMdd_HHmmss"));
+}
+
 QString nowForFileName()
 {
-  return shifted(QDateTime::currentDateTimeUtc()).toString(QStringLiteral("yyyyMMdd_HHmmss"));
+  return toFileName(QDateTime::currentDateTimeUtc());
 }
 
 }  // namespace amr::kst

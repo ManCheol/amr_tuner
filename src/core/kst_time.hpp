@@ -24,6 +24,9 @@ QString nowIso();
 /** 현재 시각 "2026-10-14 09:30:00.123" (로그용, 밀리초 포함) */
 QString nowForLog();
 
+/** UTC 시각 → "20261014_093000" (파일 이름용, 서울 시간) */
+QString toFileName(const QDateTime & utc);
+
 /** 현재 시각 "20261014_093000" (파일 이름용) */
 QString nowForFileName();
 

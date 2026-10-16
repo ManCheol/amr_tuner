@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(amr_tuner VERSION 0.3.0 LANGUAGES CXX)
+project(amr_tuner VERSION 0.4.0 LANGUAGES CXX)
 
 # ---------------------------------------------------------------------------
 # C++20, Qt 6 (개발: Qt 6.12.0 MinGW 13.1 64-bit, Windows 11)
@@ -32,6 +32,7 @@ endif()
 # ---------------------------------------------------------------------------
 add_library(amr_tuner_core STATIC
   src/core/app_log.cpp            src/core/app_log.hpp
+  src/core/capture_record.cpp     src/core/capture_record.hpp
   src/core/condition_file.cpp     src/core/condition_file.hpp
   src/core/gateway_client.cpp     src/core/gateway_client.hpp
   src/core/gateway_protocol.cpp   src/core/gateway_protocol.hpp
@@ -93,7 +94,7 @@ if(AMR_TUNER_BUILD_TESTS)
   target_link_libraries(fake_gateway PUBLIC amr_tuner_core Qt6::Network)
 
   foreach(t test_gateway_protocol test_param_model test_condition_file test_gateway_client
-      test_telemetry_buffer)
+      test_telemetry_buffer test_capture_record)
     qt_add_executable(${t} tests/${t}.cpp)
     target_link_libraries(${t} PRIVATE amr_tuner_core fake_gateway Qt6::Test)
     add_test(NAME ${t} COMMAND ${t})

@@ -10,6 +10,7 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFontDatabase>
+#include <QImage>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QInputDialog>
@@ -28,7 +29,9 @@
 #include <QTableView>
 #include <QVBoxLayout>
 
+#include "core/capture_record.hpp"
 #include "core/condition_file.hpp"
+#include "core/kst_time.hpp"
 #include "ui/param_delegate.hpp"
 
 namespace amr
@@ -226,6 +229,7 @@ void MainWindow::buildUi()
   connect(revertBtn_, &QPushButton::clicked, this, &MainWindow::revert);
   connect(saveBtn_, &QPushButton::clicked, this, &MainWindow::saveCondition);
   connect(loadBtn_, &QPushButton::clicked, this, &MainWindow::loadCondition);
+  connect(telemetryView_, &TelemetryView::captureRequested, this, &MainWindow::captureGraph);
   connect(searchEdit_, &QLineEdit::textChanged, &proxy_, &ParamFilterProxy::setSearchText);
   connect(hideInternalChk_, &QCheckBox::toggled, &proxy_, &ParamFilterProxy::setHideInternal);
   connect(pendingOnlyChk_, &QCheckBox::toggled, &proxy_, &ParamFilterProxy::setPendingOnly);
@@ -519,6 +523,73 @@ void MainWindow::saveCondition()
   s.setValue(QStringLiteral("file/lastDir"), QFileInfo(path).absolutePath());
   AppLog::info(kTagFile, QStringLiteral("saved %1 values to %2").arg(c.params.size()).arg(path));
   statusBar()->showMessage(tr("저장: %1").arg(QFileInfo(path).fileName()), 5000);
+}
+
+/* ===========================================================================
+ * 그래프 화면 저장
+ *   1. 지금 화면을 먼저 찍는다 (메모를 쓰는 동안에도 실시간 그래프는 계속 움직이므로)
+ *   2. [메모 입력]이 켜져 있으면 메모 (취소하면 저장하지 않음)
+ *   3. 조건 파일과 같은 폴더(file/lastDir)에 graph_YYYYMMDD_HHMMSS.png / .json (서울 시간, 겹치면 _2 …)
+ *   JSON = 조건 파일 형식(노드에 적용된 값) + capture 항목 → [조건 불러오기]로 다시 쓸 수 있음
+ * =========================================================================== */
+void MainWindow::captureGraph()
+{
+  const QDateTime nowUtc = QDateTime::currentDateTimeUtc();
+  const QImage image = telemetryView_->grabImage();
+  if (true == image.isNull()) {
+    AppLog::error(kTagFile, QStringLiteral("capture failed: empty image"));
+    showMessage(this, QMessageBox::Critical, tr("화면 저장 실패"), tr("화면을 가져오지 못했습니다."));
+    return;
+  }
+  CaptureInfo info = telemetryView_->captureInfo();
+
+  QString note;
+  if (true == telemetryView_->memoEnabled()) {
+    bool ok = false;
+    note = QInputDialog::getMultiLineText(this, tr("화면 저장"),
+      tr("메모 (예: path_D 3번째 이동, kp 5, SLAM 보정 직후 가로 오차 최대)"), QString(), &ok);
+    if (false == ok) {
+      statusBar()->showMessage(tr("화면 저장 취소"), 3000);
+      return;
+    }
+  }
+
+  QSettings s;
+  const QString dirPath = s.value(QStringLiteral("file/lastDir"), QDir::homePath()).toString();
+  const QDir dir(dirPath);
+  const QString base = CaptureRecord::uniqueBase(dir, CaptureRecord::baseName(nowUtc));
+  if (true == base.isEmpty()) {
+    AppLog::error(kTagFile, QStringLiteral("capture failed: no free file name in %1").arg(dirPath));
+    showMessage(this, QMessageBox::Critical, tr("화면 저장 실패"), tr("같은 이름의 파일이 너무 많습니다: %1").arg(dirPath));
+    return;
+  }
+  const QString pngPath = dir.filePath(base + QStringLiteral(".png"));
+  const QString jsonPath = dir.filePath(base + QStringLiteral(".json"));
+  if (false == image.save(pngPath, "PNG")) {
+    AppLog::error(kTagFile, QStringLiteral("capture failed: cannot write %1").arg(pngPath));
+    showMessage(this, QMessageBox::Critical, tr("화면 저장 실패"), tr("이미지를 쓸 수 없습니다: %1").arg(pngPath));
+    return;
+  }
+
+  Condition c;
+  c.node = nodeName_;
+  c.savedAt = kst::toIso(nowUtc);           // 화면을 찍은 시각 (메모 입력 시간 제외)
+  c.note = note;
+  c.params = model_.savableValues();        // 노드에 적용된 값 (접속 전이면 비어 있음)
+  info.image = base + QStringLiteral(".png");
+  info.pendingChanges = model_.pendingCount();
+  info.gateway = gatewayVersion_;
+  QString err;
+  if (false == CaptureRecord::save(jsonPath, c, info, err)) {
+    AppLog::error(kTagFile, QStringLiteral("capture record failed: %1 (%2)").arg(jsonPath, err));
+    showMessage(this, QMessageBox::Warning, tr("화면 저장"),
+      tr("이미지는 저장했지만 기록(JSON)을 쓰지 못했습니다:\n%1").arg(err));
+    return;
+  }
+  AppLog::info(kTagFile, QStringLiteral("captured %1 (%2x%3 px, run #%4, %5 params%6) in %7")
+    .arg(base).arg(image.width()).arg(image.height()).arg(info.run).arg(c.params.size())
+    .arg((true == note.isEmpty()) ? QString() : QStringLiteral(", with note")).arg(dirPath));
+  statusBar()->showMessage(tr("화면 저장: %1.png + .json (%2)").arg(base, dirPath), 8000);
 }
 
 void MainWindow::loadCondition()

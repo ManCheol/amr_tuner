@@ -7,8 +7,11 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QHBoxLayout>
+#include <QImage>
 #include <QKeySequence>
 #include <QLabel>
+#include <QPainter>
+#include <QPixmap>
 #include <QPushButton>
 #include <QQmlError>
 #include <QQuickWidget>
@@ -93,6 +96,16 @@ void TelemetryView::buildUi()
   clearBtn_->setToolTip(tr("그래프를 지우고 다음 데이터부터 0초로 그립니다"));
   bar->addWidget(clearBtn_);
 
+  bar->addSpacing(8);
+  captureBtn_ = new QPushButton(tr("화면 저장"), this);
+  captureBtn_->setToolTip(tr("그래프 탭 전체를 PNG로 저장하고, 같은 이름의 JSON에 그 순간의\n"
+    "적용된 파라미터·목표·이동 번호를 남깁니다 (조건 파일과 같은 폴더, 서울 시간 이름)\n"
+    "JSON은 [조건 불러오기]로 그대로 불러올 수 있습니다"));
+  bar->addWidget(captureBtn_);
+  memoChk_ = new QCheckBox(tr("메모 입력"), this);
+  memoChk_->setToolTip(tr("켜면 저장할 때 메모를 입력합니다 (JSON의 note)"));
+  bar->addWidget(memoChk_);
+
   bar->addStretch(1);
   statusLabel_ = new QLabel(this);
   bar->addWidget(statusLabel_);
@@ -113,6 +126,7 @@ void TelemetryView::buildUi()
   connect(pauseBtn_, &QPushButton::toggled, this, &TelemetryView::onPauseToggled);
   connect(windowCombo_, &QComboBox::currentIndexChanged, this, &TelemetryView::onWindowChanged);
   connect(clearBtn_, &QPushButton::clicked, this, &TelemetryView::clearPlots);
+  connect(captureBtn_, &QPushButton::clicked, this, &TelemetryView::captureRequested);
 
   /* Space: 그래프 탭 안에 초점이 있을 때만 (표 편집 중의 공백 입력과 겹치지 않게) */
   auto * sc = new QShortcut(QKeySequence(Qt::Key_Space), this);
@@ -152,6 +166,7 @@ void TelemetryView::loadSettings()
   windowCombo_->setCurrentIndex(index);
   onWindowChanged(index);   // 같은 번호면 신호가 나가지 않으므로 직접 반영
   autoStartChk_->setChecked(s.value(QStringLiteral("plot/autoStart"), true).toBool());
+  memoChk_->setChecked(s.value(QStringLiteral("plot/captureMemo"), false).toBool());
 }
 
 void TelemetryView::saveSettings() const
@@ -159,6 +174,52 @@ void TelemetryView::saveSettings() const
   QSettings s;
   s.setValue(QStringLiteral("plot/window"), windowCombo_->currentData().toDouble());
   s.setValue(QStringLiteral("plot/autoStart"), autoStartChk_->isChecked());
+  s.setValue(QStringLiteral("plot/captureMemo"), memoChk_->isChecked());
+}
+
+/* ===========================================================================
+ * 화면 저장 (파일 쓰기는 MainWindow)
+ * =========================================================================== */
+QImage TelemetryView::grabImage()
+{
+  /* 1. 위젯 부분 (도구줄·상태 글). QPixmap은 화면 배율(devicePixelRatio)을 가진 실제 픽셀 크기 */
+  QPixmap pm = grab();
+  /* 2. QML 그래프: QQuickWidget은 화면 밖 버퍼에 따로 그리므로 그 버퍼를 같은 자리에 덮는다.
+   *    (QWidget::grab만으로는 렌더링 방식에 따라 그래프 영역이 비어 나올 수 있음) */
+  if ((nullptr != quick_) && (true == quick_->isVisible()) &&
+    (QQuickWidget::Ready == quick_->status()))
+  {
+    const QImage fb = quick_->grabFramebuffer();
+    if (false == fb.isNull()) {
+      QPainter p(&pm);
+      p.drawImage(QRectF(quick_->geometry()), fb);   // 논리 좌표 → 배율은 QPainter가 맞춤
+      p.end();
+    } else {
+      AppLog::warn(kTagPlot, QStringLiteral("capture: graph framebuffer is empty (widget image only)"));
+    }
+  }
+  return pm.toImage();
+}
+
+CaptureInfo TelemetryView::captureInfo() const
+{
+  CaptureInfo info;
+  info.run = buffer_.runNumber();
+  if (false == buffer_.isEmpty()) {
+    info.elapsedS = buffer_.lastTime();
+    info.viewFromS = bridge_.xMin();
+    info.viewToS = bridge_.xMax();
+  }
+  info.paused = bridge_.paused();
+  info.cursorS = bridge_.cursorTime();   // 커서 없음 = NaN → JSON null
+  info.hasGoal = hasGoal_;
+  info.goal = lastGoal_;
+  return info;
+}
+
+bool TelemetryView::memoEnabled() const
+{
+  return (nullptr != memoChk_) && (true == memoChk_->isChecked());
 }
 
 /* ===========================================================================
@@ -213,6 +274,8 @@ void TelemetryView::applyGoal(const QJsonObject & body)
     AppLog::warn(kTagPlot, QStringLiteral("bad goal (ignored): %1").arg(err));
     return;
   }
+  hasGoal_ = true;
+  lastGoal_ = g;
   if (true == autoStartChk_->isChecked()) {
     buffer_.startRun(g.t);
     bridge_.resetView();
